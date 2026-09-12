@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import CaseCard from "@/components/CaseCard";
 import Upgrader from "@/components/Upgrader";
@@ -31,7 +31,7 @@ const pages = {
   },
 };
 
-export default function Home() {
+function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as keyof typeof pages) ?? "cases";
@@ -412,5 +412,13 @@ function InventoryPlaceholder({
         </div>
       )}
     </section>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <Home />
+    </Suspense>
   );
 }

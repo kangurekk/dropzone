@@ -13,8 +13,10 @@ let _db: Database.Database | null = null;
 function openDb(): Database.Database {
   if (_db) return _db;
 
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
+  // turbopackIgnore sprawia, ze Turbopack nie proboje statycznie analizowac
+  // tych sciezek (bez tego pakuje caly projekt do server outputa).
+  if (!fs.existsSync(/* turbopackIgnore: true */ DB_DIR)) {
+    fs.mkdirSync(/* turbopackIgnore: true */ DB_DIR, { recursive: true });
   }
 
   const db = new Database(DB_PATH);
@@ -173,7 +175,7 @@ function runMigrations(db: Database.Database) {
     add("highest_balance", "ALTER TABLE users ADD COLUMN highest_balance REAL NOT NULL DEFAULT 20");
     add("total_wagered",   "ALTER TABLE users ADD COLUMN total_wagered REAL NOT NULL DEFAULT 0");
     add("total_won",       "ALTER TABLE users ADD COLUMN total_won REAL NOT NULL DEFAULT 0");
-    add("avatar",          "ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT 'diamond'");
+    add("avatar",          "ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '◆'");
     add("banner_color",    "ALTER TABLE users ADD COLUMN banner_color TEXT NOT NULL DEFAULT '#8b5cf6'");
     add("accent_color",    "ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#a78bfa'");
     add("bio",             "ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
