@@ -1,0 +1,23 @@
+app = "dropzone"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[mounts]
+  source = "dropzone_data"
+  destination = "/data"
+
+[env]
+  DATABASE_DIR = "/data"
