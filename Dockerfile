@@ -2,11 +2,11 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Kopiuj package files
+# Instaluj zależności
 COPY package*.json ./
 RUN npm ci
 
-# Kopiuj resztę projektu
+# Kopiuj resztę
 COPY . .
 
 # Zbuduj Next.js
@@ -14,6 +14,7 @@ RUN npm run build
 
 # Port
 EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-# Start produkcyjny
 CMD ["npm", "run", "start"]
