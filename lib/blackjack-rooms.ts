@@ -8,6 +8,7 @@ import {
   isBust,
   shouldDealerHit,
 } from "./blackjack";
+import db from "./db";
 
 export type RoomPhase = "lobby" | "betting" | "playing" | "dealer" | "result";
 
@@ -58,6 +59,7 @@ export type Room = {
   botActAt: number | null;
   createdAt: number;
   updatedAt: number;
+  paidOut: boolean;
 };
 
 const BETTING_MS = 20_000;
@@ -175,6 +177,7 @@ export function createRoom(opts: {
     botActAt: null,
     createdAt: now,
     updatedAt: now,
+    paidOut: false,
   };
 
   saveRoom(room);
@@ -290,6 +293,7 @@ export function startBetting(room: Room) {
   room.turnUserId = null;
   room.turnSeat = null;
   room.botActAt = null;
+  room.paidOut = false;
 
   for (const p of room.players) {
     p.bet = 0;
@@ -343,6 +347,7 @@ function deal(room: Room) {
 
   room.phase = "playing";
   room.phaseStartedAt = now;
+  room.paidOut = false;
 
   const next = room.players.find((p) => p.status === "playing");
   if (!next) {
@@ -420,7 +425,43 @@ function resolveAll(room: Room) {
     p.status = "done";
   }
 
+  payOutRoom(room);
   saveRoom(room);
+}
+
+export function payOutRoom(room: Room) {
+  if (room.paidOut) return;
+  room.paidOut = true;
+
+  const now = Date.now();
+  for (const p of room.players) {
+    if (p.payout > 0 && !p.isBot) {
+      db.prepare(
+        `UPDATE users SET balance = balance + ?,
+                          highest_balance = MAX(highest_balance, balance + ?),
+                          total_won = total_won + ?
+         WHERE id = ?`
+      ).run(p.payout, p.payout, p.payout, p.userId);
+
+      db.prepare(
+        `INSERT INTO drop_history
+         (user_id, username, item_name, item_image, item_color, item_rarity,
+          item_price, case_name, case_id, dropped_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        p.userId,
+        p.username,
+        `+$${(p.payout - p.bet).toFixed(2)}`,
+        null,
+        "#4ade80",
+        "blackjack",
+        p.payout,
+        p.outcome === "blackjack" ? "Blackjack (BJ)" : "Blackjack",
+        p.outcome,
+        now
+      );
+    }
+  }
 }
 
 export function playerAction(
@@ -573,6 +614,7 @@ export function tickRoom(roomId: string) {
     room.turnUserId = null;
     room.turnSeat = null;
     room.botActAt = null;
+    room.paidOut = false;
 
     for (const p of room.players) {
       p.bet = 0;

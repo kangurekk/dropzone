@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { getItemById } from "@/lib/items";
+import { getPrice } from "@/lib/prices";
 import { isValidMultiplier, oddsFor } from "@/lib/upgrader";
 import { enforceLimit } from "@/lib/rate-limit";
 
@@ -12,8 +13,6 @@ export async function POST(request: Request) {
   }
 
   // ── Rate limit: 20 upgrade'ów na minutę per user ─────────────
-  // Upgrade ma animację, jedno kliknięcie ~2-3s. 20/min daje zapas,
-  // a boty spamujące setkami → 429.
   const blocked = enforceLimit(`upgrade:${user.id}`, 20, 60_000);
   if (blocked) return blocked;
 
@@ -33,8 +32,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Target not found" }, { status: 404 });
   }
 
-  const targetPrice =
-    typeof body.targetPrice === "number" ? body.targetPrice : target.price ?? 0;
+  // ── Serwer sam ustala cenę targetu — NIE ufamy klientowi ─────
+  // Wcześniej `body.targetPrice` przychodziło od klienta i było
+  // tylko sanity-checkowane, co pozwalało wysłać targetPrice: 5000
+  // przy tanim itemie i wygrać fałszywą wartość.
+  const serverTargetPrice = getPrice(target.name);
+  if (serverTargetPrice == null || serverTargetPrice <= 0) {
+    return NextResponse.json(
+      { error: "Target has no known price" },
+      { status: 400 }
+    );
+  }
 
   const odds = oddsFor(multiplier);
 
@@ -59,14 +67,17 @@ export async function POST(request: Request) {
 
       if (!staked) throw new Error("ITEM_NOT_FOUND");
 
-      const minTarget = staked.price * multiplier;
-      if (targetPrice < minTarget) {
+      // ── Sprawdź czy target jest odpowiednio droższy ──────────
+      // target >= staked * multiplier (z tolerancją 5% na wahania cen)
+      const minTarget = staked.price * multiplier * 0.95;
+      if (serverTargetPrice < minTarget) {
         throw new Error("TARGET_TOO_LOW");
       }
 
       const win = Math.random() * 100 < odds;
       const now = Date.now();
 
+      // Remove staked item always
       db.prepare("DELETE FROM inventory WHERE id = ?").run(staked.id);
 
       let wonItem: any = null;
@@ -85,7 +96,7 @@ export async function POST(request: Request) {
             target.image ?? null,
             target.color ?? null,
             target.rarity ?? null,
-            targetPrice,
+            serverTargetPrice,
             now
           );
 
@@ -96,7 +107,7 @@ export async function POST(request: Request) {
           image: target.image,
           color: target.color,
           rarity: target.rarity,
-          price: targetPrice,
+          price: serverTargetPrice,
           droppedAt: now,
         };
       }
@@ -106,7 +117,7 @@ export async function POST(request: Request) {
          SET total_wagered = total_wagered + ?,
              total_won = total_won + ?
          WHERE id = ?`
-      ).run(staked.price, win ? targetPrice : 0, user.id);
+      ).run(staked.price, win ? serverTargetPrice : 0, user.id);
 
       return { win, wonItem, stakedUid: String(staked.id) };
     })();
