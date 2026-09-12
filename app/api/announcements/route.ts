@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { getAdminUser } from "@/lib/admin.ts";
+import { getAdminUser } from "@/lib/admin";
 import db from "@/lib/db";
 
 export const dynamic = "force-dynamic";

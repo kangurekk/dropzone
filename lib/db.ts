@@ -5,7 +5,7 @@ import fs from "fs";
 const DB_DIR = process.env.DATABASE_DIR ?? path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "dropzone.db");
 
-if (!fs.existsSync(DB_DIR)) {
+if (!fs.existsSync(/*turbopackIgnore: true*/ DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
