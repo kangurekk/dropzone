@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { CASES, type CaseReward } from "@/lib/cases";
 import { getItemById } from "@/lib/items";
+import { enforceLimit } from "@/lib/rate-limit";
 
 type CaseRewardWithPrice = CaseReward & { price?: number };
 
@@ -27,6 +28,12 @@ export async function POST(request: Request) {
     console.log("[case/open] not logged in");
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 20 otwarć na minutę per user ─────────────────
+  // Wystarczy dla normalnej gry (jedno otwarcie ~2s animacji),
+  // ale zatrzyma skrypty spamujące endpointem.
+  const blocked = enforceLimit(`case-open:${user.id}`, 20, 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const caseId = typeof body.caseId === "string" ? body.caseId : null;
@@ -103,7 +110,6 @@ export async function POST(request: Request) {
          (user_id, case_id, case_name, item_name, item_price, opened_at)
          VALUES (?, ?, ?, ?, ?, ?)`
       ).run(user.id, caseData.id, caseData.name, winner.name, itemPrice, now);
-      
 
       return {
         winner: {

@@ -2,10 +2,16 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { cashOutRocket, publicRocketState } from "@/lib/rocket";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+
+  // ── Rate limit: 30 cashoutów na minutę per user ──────────────
+  // User klika raz na rundę. Bot spamujący setki razy → 429.
+  const blocked = enforceLimit(`rocket-cash:${user.id}`, 30, 60_000);
+  if (blocked) return blocked;
 
   const result = cashOutRocket(user.id);
   if (!result.ok) {

@@ -3,12 +3,19 @@ import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { getItemById } from "@/lib/items";
 import { isValidMultiplier, oddsFor } from "@/lib/upgrader";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 20 upgrade'ów na minutę per user ─────────────
+  // Upgrade ma animację, jedno kliknięcie ~2-3s. 20/min daje zapas,
+  // a boty spamujące setkami → 429.
+  const blocked = enforceLimit(`upgrade:${user.id}`, 20, 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const { inventoryId, targetItemId, multiplier } = body;
@@ -26,9 +33,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Target not found" }, { status: 404 });
   }
 
-  // Target price from reward/CSFloat — client sends price? We need target value.
-  // Use target.price if set in items, otherwise reject.
-  // Actually the target price is chosen by client. Send it in the request.
   const targetPrice =
     typeof body.targetPrice === "number" ? body.targetPrice : target.price ?? 0;
 
@@ -36,7 +40,6 @@ export async function POST(request: Request) {
 
   try {
     const result = db.transaction(() => {
-      // Verify staked item belongs to user
       const staked = db
         .prepare(
           `SELECT id, item_id, name, image, color, rarity, price
@@ -56,7 +59,6 @@ export async function POST(request: Request) {
 
       if (!staked) throw new Error("ITEM_NOT_FOUND");
 
-      // Sanity check target >= staked * multiplier
       const minTarget = staked.price * multiplier;
       if (targetPrice < minTarget) {
         throw new Error("TARGET_TOO_LOW");
@@ -65,13 +67,11 @@ export async function POST(request: Request) {
       const win = Math.random() * 100 < odds;
       const now = Date.now();
 
-      // Remove staked item always
       db.prepare("DELETE FROM inventory WHERE id = ?").run(staked.id);
 
       let wonItem: any = null;
 
       if (win) {
-        // Add target item
         const inv = db
           .prepare(
             `INSERT INTO inventory
@@ -101,7 +101,6 @@ export async function POST(request: Request) {
         };
       }
 
-      // Stats — wagered = staked price
       db.prepare(
         `UPDATE users
          SET total_wagered = total_wagered + ?,
@@ -109,7 +108,6 @@ export async function POST(request: Request) {
          WHERE id = ?`
       ).run(staked.price, win ? targetPrice : 0, user.id);
 
-      // Return new inventory item to add client-side if win
       return { win, wonItem, stakedUid: String(staked.id) };
     })();
 

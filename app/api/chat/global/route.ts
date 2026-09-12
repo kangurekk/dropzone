@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,12 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 20 wiadomości na minutę per user ─────────────
+  // Normalny user pisze 1-3/min. Spamer idzie w setki → 429.
+  // Dodatkowo ochrona przed floodem na czacie publicznym.
+  const blocked = enforceLimit(`chat-global:${user.id}`, 20, 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const content =

@@ -5,9 +5,17 @@ import {
   createSession,
   setSessionCookie,
 } from "@/lib/auth";
+import { enforceLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    // ── Rate limit po IP ──────────────────────────────────────
+    // 10 prób na 15 minut z jednego IP. Wystarczy żeby pomylić się
+    // kilka razy, ale nie wystarczy do brute force.
+    const ip = getClientIp(request);
+    const ipBlocked = enforceLimit(`login-ip:${ip}`, 10, 15 * 60_000);
+    if (ipBlocked) return ipBlocked;
+
     const { username, password } = await request.json();
 
     if (typeof username !== "string" || typeof password !== "string") {
@@ -18,6 +26,12 @@ export async function POST(request: Request) {
     }
 
     const u = username.trim().toLowerCase();
+
+    // ── Rate limit po username ────────────────────────────────
+    // 5 prób na 15 minut na konto. Chroni przed atakiem
+    // rozproszonym (wiele IP, jedno konto).
+    const userBlocked = enforceLimit(`login-user:${u}`, 5, 15 * 60_000);
+    if (userBlocked) return userBlocked;
 
     const row = db
       .prepare("SELECT id, password_hash FROM users WHERE username = ?")

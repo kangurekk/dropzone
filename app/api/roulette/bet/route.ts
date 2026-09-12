@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { placeBet, type BetType } from "@/lib/roulette";
+import { enforceLimit } from "@/lib/rate-limit";
 
 const VALID_TYPES: BetType[] = [
   "red", "black", "green", "even", "odd",
@@ -13,6 +14,12 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 40 zakładów na minutę per user ───────────────
+  // Runda ruletki trwa ~30-60s. Gracz może postawić kilka
+  // zakładów na rundę (split, kilka typów). 40/min daje zapas.
+  const blocked = enforceLimit(`roulette-bet:${user.id}`, 40, 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const { type, number, amount } = body;

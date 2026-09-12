@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { areFriends } from "@/lib/friends";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,6 @@ export async function GET(
     )
     .all(user.id, otherId, otherId, user.id) as any[];
 
-  // Mark as read
   db.prepare(
     `UPDATE messages
      SET read_at = ?
@@ -68,6 +68,12 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 30 wiadomości na minutę per user ─────────────
+  // DM-y są bardziej "rozmowne" niż czat globalny, więc limit
+  // wyższy. Ale i tak zatrzyma flood/boty wysyłające setki.
+  const blocked = enforceLimit(`chat-dm:${user.id}`, 30, 60_000);
+  if (blocked) return blocked;
 
   const { userId } = await params;
   const otherId = parseInt(userId, 10);

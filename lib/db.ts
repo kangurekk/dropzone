@@ -152,6 +152,15 @@ function runMigrations(db: Database.Database) {
       );
     `);
 
+    // ── Rate limiting ──────────────────────────────────────────
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS rate_limits (
+        key TEXT PRIMARY KEY,
+        count INTEGER NOT NULL DEFAULT 0,
+        reset_at INTEGER NOT NULL
+      );
+    `);
+
     db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_inventory_user ON inventory(user_id);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_case_openings_user ON case_openings(user_id);`);
@@ -163,6 +172,7 @@ function runMigrations(db: Database.Database) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_global ON messages(created_at DESC) WHERE receiver_id IS NULL;`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_dm ON messages(sender_id, receiver_id, created_at DESC);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(receiver_id, read_at) WHERE receiver_id IS NOT NULL;`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_rate_limits_reset ON rate_limits(reset_at);`);
 
     const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
     const has = (n: string) => cols.some((c) => c.name === n);

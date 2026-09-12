@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { getRoom, playerAction, publicRoom } from "@/lib/blackjack-rooms";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export async function POST(
   request: Request,
@@ -9,6 +10,13 @@ export async function POST(
 ) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+
+  // ── Rate limit: 60 akcji na minutę per user ──────────────────
+  // W blackjacku akcje lecą szybko (hit, hit, stand), ale bez
+  // przesady — realnie ~10-20/min na grę. 60/min daje zapas,
+  // a bot spamujący setki → 429.
+  const blocked = enforceLimit(`bj-action:${user.id}`, 60, 60_000);
+  if (blocked) return blocked;
 
   const { id } = await params;
   const room = getRoom(id);
@@ -25,7 +33,6 @@ export async function POST(
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  // If doubled, deduct extra bet
   if (result.extraBet != null) {
     try {
       db.transaction(() => {
@@ -47,7 +54,6 @@ export async function POST(
     }
   }
 
-  // If room is in result phase, do the payouts
   if (room.phase === "result") {
     payOutRoom(room);
   }

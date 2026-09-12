@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
+import { enforceLimit } from "@/lib/rate-limit";
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -13,6 +14,13 @@ export async function POST(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 20 zmian profilu na godzinę per user ─────────
+  // Normalny user zmienia profil raz na jakiś czas. Spamer
+  // zmieniający username w kółko (żeby uniknąć blokad)
+  // dostanie 429.
+  const blocked = enforceLimit(`profile-update:${user.id}`, 20, 60 * 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const { username, avatar, bannerColor, accentColor, bio } = body;
@@ -47,7 +55,7 @@ export async function POST(request: Request) {
     }
   }
 
-    // ── Avatar: allow emoji or a path like /uploads/avatars/... ───
+  // ── Avatar: allow emoji or a path like /uploads/avatars/... ───
   let newAvatar: string | null = null;
   if (typeof avatar === "string") {
     const a = avatar.trim();

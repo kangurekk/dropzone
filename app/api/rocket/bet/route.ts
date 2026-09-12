@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { placeRocketBet, publicRocketState } from "@/lib/rocket";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+
+  // ── Rate limit: 30 zakładów na minutę per user ───────────────
+  // Runda rocket trwa kilkadziesiąt sekund, więc 30/min to
+  // bardzo liberalnie — a i tak zatrzyma skrypty spamujące.
+  const blocked = enforceLimit(`rocket-bet:${user.id}`, 30, 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const amount = Number(body.amount);

@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import db from "@/lib/db";
 import { rollPlinko, isValidRisk, isValidRows } from "@/lib/plinko";
+import { enforceLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // ── Rate limit: 120 kul na minutę per user (= 2/s) ───────────
+  // Normalny user klika może 1-2 razy na sekundę. Auto-clicker
+  // robi 10-100/s. Ten limit jest liberalny dla graczy i
+  // zaporowy dla botów.
+  const blocked = enforceLimit(`plinko:${user.id}`, 120, 60_000);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const { bet, risk, rows } = body;

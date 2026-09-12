@@ -5,9 +5,17 @@ import {
   createSession,
   setSessionCookie,
 } from "@/lib/auth";
+import { enforceLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    // ── Rate limit po IP ──────────────────────────────────────
+    // 5 rejestracji na godzinę z jednego IP. Normalny user
+    // zaklada jedno konto, bot masowo — to go zatrzyma.
+    const ip = getClientIp(request);
+    const blocked = enforceLimit(`signup-ip:${ip}`, 5, 60 * 60_000);
+    if (blocked) return blocked;
+
     const { username, password } = await request.json();
 
     if (typeof username !== "string" || typeof password !== "string") {
