@@ -5,7 +5,7 @@ import fs from "fs";
 const DB_DIR = process.env.DATABASE_DIR ?? path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "dropzone.db");
 
-// Next.js sets NEXT_PHASE during `next build` page-data collection.
+// Next.js ustawia NEXT_PHASE podczas zbierania page data w `next build`.
 const IS_BUILD = process.env.NEXT_PHASE === "phase-production-build";
 
 let _db: Database.Database | null = null;
@@ -19,25 +19,21 @@ function openDb(): Database.Database {
 
   const db = new Database(DB_PATH);
 
-  // 1. MUST come before anything else that could hit a lock.
-  //    10s is plenty for build-time worker contention.
+  // 1. MUSI byc przed czymkolwiek innym - daje SQLite czas na czekanie
+  //    na zwolnienie locka zamiast rzucac SQLITE_BUSY od razu.
   db.pragma("busy_timeout = 10000");
 
-  // 2. Only flip WAL if we're not already in WAL. Reading the current
-  //    mode is cheap; setting it is a write and can contend.
+  // 2. Ustaw WAL tylko jesli jeszcze nie jest WAL.
   const mode = db.pragma("journal_mode", { simple: true }) as string;
   if (mode.toLowerCase() !== "wal") {
     try {
       db.pragma("journal_mode = WAL");
     } catch {
-      // Another worker may have flipped it between our read and write.
-      // That's fine — the file is WAL now, which is all we wanted.
+      // Inny worker mogl przestawic miedzy naszym read a write.
     }
   }
 
-  // 3. Never run DDL / migrations during the build. They execute on
-  //    first server start instead. This removes ~20 write transactions
-  //    per worker from the build, which is the real source of contention.
+  // 3. NIGDY nie odpalaj DDL/migracji podczas builda.
   if (!IS_BUILD) {
     runMigrations(db);
   }
@@ -47,8 +43,6 @@ function openDb(): Database.Database {
 }
 
 function runMigrations(db: Database.Database) {
-  // Wrap everything in a single transaction: fewer lock acquisitions,
-  // atomic (either all tables exist or none), and dramatically faster.
   const migrate = db.transaction(() => {
     db.exec(`
       CREATE TABLE IF NOT EXISTS users (
@@ -59,7 +53,6 @@ function runMigrations(db: Database.Database) {
         created_at INTEGER NOT NULL
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         token TEXT PRIMARY KEY,
@@ -68,7 +61,6 @@ function runMigrations(db: Database.Database) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS inventory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +75,6 @@ function runMigrations(db: Database.Database) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS case_openings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +87,6 @@ function runMigrations(db: Database.Database) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS announcements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,7 +99,6 @@ function runMigrations(db: Database.Database) {
         FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS deposits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +108,6 @@ function runMigrations(db: Database.Database) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS drop_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +123,6 @@ function runMigrations(db: Database.Database) {
         dropped_at INTEGER NOT NULL
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS friendships (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,7 +137,6 @@ function runMigrations(db: Database.Database) {
         FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
-
     db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,23 +169,24 @@ function runMigrations(db: Database.Database) {
       if (!has(col)) db.exec(ddl);
     };
 
-    add("cases_opened",   "ALTER TABLE users ADD COLUMN cases_opened INTEGER NOT NULL DEFAULT 0");
-    add("highest_balance","ALTER TABLE users ADD COLUMN highest_balance REAL NOT NULL DEFAULT 20");
-    add("total_wagered",  "ALTER TABLE users ADD COLUMN total_wagered REAL NOT NULL DEFAULT 0");
-    add("total_won",      "ALTER TABLE users ADD COLUMN total_won REAL NOT NULL DEFAULT 0");
-    add("avatar",         "ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT '◆'");
-    add("banner_color",   "ALTER TABLE users ADD COLUMN banner_color TEXT NOT NULL DEFAULT '#8b5cf6'");
-    add("accent_color",   "ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#a78bfa'");
-    add("bio",            "ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
-    add("avatar_focal_x", "ALTER TABLE users ADD COLUMN avatar_focal_x REAL NOT NULL DEFAULT 50");
-    add("avatar_focal_y", "ALTER TABLE users ADD COLUMN avatar_focal_y REAL NOT NULL DEFAULT 50");
-    add("avatar_zoom",    "ALTER TABLE users ADD COLUMN avatar_zoom REAL NOT NULL DEFAULT 1");
-    add("is_admin",       "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+    add("cases_opened",    "ALTER TABLE users ADD COLUMN cases_opened INTEGER NOT NULL DEFAULT 0");
+    add("highest_balance", "ALTER TABLE users ADD COLUMN highest_balance REAL NOT NULL DEFAULT 20");
+    add("total_wagered",   "ALTER TABLE users ADD COLUMN total_wagered REAL NOT NULL DEFAULT 0");
+    add("total_won",       "ALTER TABLE users ADD COLUMN total_won REAL NOT NULL DEFAULT 0");
+    add("avatar",          "ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT 'diamond'");
+    add("banner_color",    "ALTER TABLE users ADD COLUMN banner_color TEXT NOT NULL DEFAULT '#8b5cf6'");
+    add("accent_color",    "ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#a78bfa'");
+    add("bio",             "ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+    add("avatar_focal_x",  "ALTER TABLE users ADD COLUMN avatar_focal_x REAL NOT NULL DEFAULT 50");
+    add("avatar_focal_y",  "ALTER TABLE users ADD COLUMN avatar_focal_y REAL NOT NULL DEFAULT 50");
+    add("avatar_zoom",     "ALTER TABLE users ADD COLUMN avatar_zoom REAL NOT NULL DEFAULT 1");
+    add("is_admin",        "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
   });
 
   migrate();
 }
 
+// Proxy - leniwie otwiera baze przy pierwszym uzyciu
 const dbProxy = new Proxy({} as Database.Database, {
   get(_target, prop) {
     const db = openDb();
